@@ -1,10 +1,3 @@
-/*
-
-TIPS:
-- Use realtime kernel
-
-*/
-
 (
 	/*
 
@@ -200,7 +193,7 @@ TIPS:
 		\env, env,
 		// \lag, Pwhite(0.0,0.01).clump(chordSize), 
 		\strum, Pkey(\env)/tight,
-		\release, 0.9, //1+Pkey(\env),
+		\release, 1+(Pkey(\env)/3),
 		\detune, Pkey(\env) * 2  * Pdefn(\detune, 1),
 		\amp, Pdefn(\amp, 1) * amp,
 		\cutoff, Pkey(\env)/4 + 0.5,
@@ -358,6 +351,7 @@ TIPS:
 	v = IdentityDictionary.new;
 
 	v.put(\tempooff, 2);
+	v.put(\changetempo, 2);
 
 	a.put(\startPat, {|el|
 		var val = el.value;
@@ -382,11 +376,13 @@ TIPS:
 		if(val == 1, {
 			"Applying changes".postln;
 
-				v.keysValuesDo{|key, value|
-					"Setting % to %".format(key, value).postln;
-					Pdefn(key).source = value;
-				};
-		})
+			v.keysValuesDo{|key, value|
+				"Setting % to %".format(key, value).postln;
+				Pdefn(key).source = value;
+			};
+		});
+
+		TempoClock.default.tempo_(v[\changetempo] ?? 1)
 	});
 
 	a.put(\rootNote, {|el|
@@ -471,6 +467,12 @@ TIPS:
 		// v.put(\amp, val)
 	});
 
+	a.put(\changetempo, {|el|
+		var val = el.value.linexp(0.0,1.0,0.01,4.0);
+		"Changing tempo: %".format(val).postln;
+		v.put(\changetempo, val)
+	});
+
 	MKtl('nano').elAt(\tr, \play).action = a[\startPat];
 	MKtl('nano').elAt(\tr, \stop).action = a[\stopPat];
 	MKtl('nano').elAt(\tr, \cycle).action = a[\changeChords];
@@ -479,20 +481,14 @@ TIPS:
 	MKtl('nano').elAt(\kn, \1).action = a[\changeSpeed];
 	MKtl('nano').elAt(\kn, \2).action = a[\rootNote];
 	MKtl('nano').elAt(\kn, \3).action = a[\stuts];
+	MKtl('nano').elAt(\kn, \7).action = a[\changetempo];
 	MKtl('nano').elAt(\kn, \8).action = a[\amp];
-
 
 	MKtl('nano').elAt(\sl, \1).action = a[\noteOffset];
 	MKtl('nano').elAt(\sl, \2).action = a[\octOff];
 	MKtl('nano').elAt(\sl, \3).action = a[\chordTightness];
 	MKtl('nano').elAt(\sl, \4).action = a[\changePanSpeed];
 	MKtl('nano').elAt(\sl, \5).action = a[\detune];
-
 )
 
-MKtl('nano').elAt(\bt, \R, \1).enabled
-
-
-1.0000520023.roundUp(0.01)
-
-Pdefn(\speed).source
+MKtl('nano').gui
