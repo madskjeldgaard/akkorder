@@ -490,5 +490,3 @@
 	MKtl('nano').elAt(\sl, \4).action = a[\changePanSpeed];
 	MKtl('nano').elAt(\sl, \5).action = a[\detune];
 )
-
-MKtl('nano').gui
