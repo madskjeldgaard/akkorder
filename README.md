@@ -2,6 +2,10 @@
 ![alt](akkorder-cover.jpg)
 This repo contains the code used to generate the pieces for the release ["Akkorder" by Mads Kjeldgaard](https://ambitioustapes.bandcamp.com/album/akkorder-2).
 
+### Usage
+
+Open [akkorder-script.scd](akkorder-script.scd) in the SuperCollider IDE and evaluate it.
+
 ### Dependencies
 The script runs in SuperCollider and has the whole system built into one file.
 
