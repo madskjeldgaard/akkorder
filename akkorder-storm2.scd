@@ -1,73 +1,29 @@
 (
 	/*
-    _    _    _                 _           
-   / \  | | _| | _____  _ __ __| | ___ _ __ 
-  / _ \ | |/ / |/ / _ \| '__/ _` |/ _ \ '__|
- / ___ \|   <|   < (_) | | | (_| |  __/ |   
-/_/   \_\_|\_\_|\_\___/|_|  \__,_|\___|_|   
-
-	This is the script used to generate the compositions for the pieces on the
-	release "Akkorder" by Mads Kjeldgaard, released by Ambitious Tapes in 2020.
-
-	With this you can generate as many versions of the pieces as you want.
-
-	The script creates a generative composition of interlaced chord structures,
-	plays it and records it to your desktop in realtime.
-
-	The script has a few features that I will describe below:
-
-	DISJOINTED CHORDS 
-	My main interest for these pieces was to work with a sort of
-	timed dissolving where the chords would progressively go from having the notes
-	of the chord played at the same time to having each note becoming more and more
-	offset so that the chord falls apart, before it snaps back into place.
-	Something interesting happens, psychoacoustically I think, when several of
-	these are played at the same time. 
-
-	TEMPOBOT
-	A tempobot is included. It is a probability based bot which may or may not
-	dynamically change the overall tempo of the composition while it plays. Watch
-	the post window to see what it's up to.
-
-	GENERATIVE TONALITY
-	The root note and scale is randomly chosen at the beginning of each iteration
-
-	ARBITRARY SOUND SOURCE
-	The sound source can be a square wave, triangle wave or saw wave played back in anything from 1 to 64 speakers
-
-	STUTTER STRUCTURES
-	Each chord "stream" is organized in a probability based stutter structure. 
-
-	*/
-
-	/*
 
 	STEP 0: Set the settings for the composition
 
 	*/
 
 	~numChans = 2;
-	~filter = [\rlpf, \dfm1].choose; // rlpf or dfm1
-	~source = [\square, \saw, \tri].choose; // square, saw, tri
+	~filter = \rlpf; //[\rlpf, \dfm1].choose; // rlpf or dfm1
 
 	~pieceDurInBeats = 512;
-	~record = true;
+	~record = false;
 	~initTempo = 1.0;
 
-	~layers = 12;
+	~layers = 10;
 
 	~root = rrand(-6,6);
-	~scale = Scale.choose;
+	~scale = Scale.minor;
+	~source = \square;
 	// ~mainCurve = Pwhite(-10.0,10.0); // \exp
 
 	// Curve used for the central envelope in the patterns
 	~mainCurve = \lin;
 
-	~tempoChangeProbability = 0.5;
-	~tempoChangeTime = 32;
-
 	~chordTightness = 0.25; //rrand(0.75,1.0);
-	~unisonAmount = rrand(0.0,0.5);
+	~unisonAmount = 0; //rrand(0.0,0.5);
 
 	~chords = [
 		[0,2,5],
@@ -84,15 +40,13 @@
 	*/
 
 	// Num hardware outputs
-	s.options.numOutputBusChannels_(~numChans);
-	s.options.numInputBusChannels_(0);
+	// s.options.numOutputBusChannels_(~numChans);
+	// s.options.numInputBusChannels_(0);
 
 	s.doWhenBooted{
 		var panfunc, filterfunc, sourcefunc;
 		// Change tempo
 		// TempoClock.default.tempo_(0.5);
-		TempoClock.default.tempo_(1);
-
 		sourcefunc = case
 		{ ~source == \saw } {
 			"Setting source function to saw".postln;
@@ -104,7 +58,7 @@
 		}
 		{ ~source == \square } {
 			"Setting source function to square".postln;
-			{|env, freq=442, width=0.5| PulseDPW.ar(freq: freq, width: width, mul: env)}
+			{|env, freq=442, pulsewidth=0.5| PulseDPW.ar(freq: freq, width: pulsewidth, mul: env)}
 		};
 
 		// Pan function
@@ -164,18 +118,18 @@
 			// var sig = DPW4Saw.ar(freq: freq, mul: env);
 			var sig = SynthDef.wrap(sourcefunc, prependArgs: [env]);
 
+
 			sig = SynthDef.wrap(filterfunc, prependArgs:[sig, env]);
 			sig = SynthDef.wrap(panfunc, prependArgs:[sig]);
 
 			Out.ar(out, sig * amp);
 		}).store;
+
+		// Pdef(\master, ~makeComposition.value(~root, ~scale, ~pieceDurInBeats)).play;
+
 	};
 
 	s.boot;
-
-	s.waitForBoot{
-		~composition.play(quant:0.125)
-	};
 
 	/*
 
@@ -183,8 +137,6 @@
 	Also: start tempobot
 
 	*/
-
-	TempoClock.default.tempo_(~initTempo);
 
 	// ------- Pattern machine ------- //
 
@@ -209,42 +161,44 @@
 	~record.if({ ~recFunc.value });
 	~report = "";
 
-	~makeChordPat = { |oct=5, edur=16, d=0.125, unison=0.0, root, chord, scale, numStuts=3, degreeList=#[0,2,3], amp=0.01|
+	~makeChordPat = { |oct=5, edur=16, d=0.125, unison=0.0, root, chord, scale, numStuts=3, degreeList=#[0,2,3], amp=0.01, out=0|
 	var chordSize = chord.size;
 
 	var stutDegrees = Pseq(degreeList,inf);
 
 	var stutPat = Pstutter(
-		Pseq((1..numStuts),inf), 
+		Pdefn(\stuts, 0) + Pseq((1..numStuts),inf), 
 		stutDegrees
 	);
 
 	var env = Pn(
 		Pseg(
 			Pseq([0.00001,1.0,0.00001], inf), 
-			edur,
+			edur.clip(0.1,256.0),
 			~mainCurve
 		)
 	);
 
-	var tight = (~chordTightness * 100).clip(1,100);
+	var tight = (Pdefn(\tight,1) * 100).clip(1,100);
 
 	var pat = Pbind(
 		\scale, scale,
-		\octave, oct,
-		\root, root,
+		\stretch, Pdefn(\speed, 1),
+		\octave, Pdefn(\octoff, 0) + oct,
+		\root, Pdefn(\root, 0),
 		\stutDegrees, Pseq([0,2,3],inf),
 		\stutPat, stutPat,
-		\degree, chord + Pkey(\stutPat), 
-		\dur, d, 
+		\degree, Pdefn(\note,0)+chord + Pkey(\stutPat), 
+		\dur, d.clip(0.001,4.0), 
 		\env, env,
-		\lag, Pwhite(0.0,0.01).clump(chordSize), 
+		// \lag, Pwhite(0.0,0.01).clump(chordSize), 
 		\strum, Pkey(\env)/tight,
-		\release, 1+Pkey(\env),
-		\detune, Pkey(\env) * 2,
-		\amp, amp,
-		\cutoff, Pkey(\env)/4 + 0.5,
-		\pan, rrand(0.25,0.75)	
+		\release, 1+(Pkey(\env)/3),
+		\detune, Pkey(\env) * 2  * Pdefn(\detune, 1),
+		\amp, Pdefn(\amp, 1) * amp,
+		\cutoff, Pkey(\env)/4 + Pdefn(\filteroff, 0.5),
+		\pan, Pseg([0,1.0,0.0], (Pdefn(\pan,1)*exprand(10,100)).clip(32.0,0.01), \lin, inf),
+		\out, out
 	);
 
 	// Unison
@@ -329,8 +283,9 @@
 			root: root,
 			chord: chord,
 			numStuts: numStuts,
-			degreeList: degrees, 
-			amp: numLayers/300
+			degreeList: degrees ++ [Pdefn(\deg1, 4), Pdefn(\deg2,5), Pdefn(\deg3, 3)], 
+			amp: numLayers/300,
+			out: layerNum.linlin(0,numLayers-1, 0, numLayers * ~numChans)
 		);
 
 		[newLayerEveryBeatNum, thisPat]
@@ -344,13 +299,11 @@
 
 	if(0.5.coin, { stuts = stuts.reverse });
 
-	Pfindur(dur,
 		Ptpar([
 			0 * dur, ~makeLayers.value(numStuts: stuts[0], scale: scale, root: root, numLayers: ~layers, chord: ~chords.choose),
 			1 * dur, ~makeLayers.value(numStuts: stuts[1], scale: scale, root: root, numLayers: ~layers, chord: ~chords.choose),
 			2 * dur, ~makeLayers.value(numStuts: stuts[2], scale: scale, root: root, numLayers: ~layers, chord: ~chords.choose)
 		])
-	)
 };
 
 ~makeComposition = {|startroot=0, scale, totaldur=1024|
@@ -380,63 +333,194 @@
 	numScales.do{ ~scaleChoice.value(addToDict) };
 };
 
-// ------- Tempo changer ------- //
-Tdef(\tempoChanger, {
 
-	var fadeTime = ~tempoChangeTime;
-	var deviation = 0.1;
+	// Set up controller
+	MKtl('nano', "*nanokontrol2");
 
-	// Time between tempo adjustments
-	var timeGrain = 0.01;
+	// Set up default tempoclock with a big queue
+	// t = TempoClock.new(1.5, nil, nil,  queueSize: 2.pow(14).round);
 
-	// Fade time
-	var fTime = fadeTime ?? 8;
+	TempoClock.default.tempo_(2);
 
-	// Current tempo
-	var ogTemp = TempoClock.default.tempo;
+	Pdef.defaultQuant = 4;
+	Pdefn.defaultQuant = 4;
+)
+(
+	// Actions
+	a = IdentityDictionary.new;
 
-	// Target tempo
-	// var newTemp = 0.01;
-	var newTemp = if(ogTemp < 0.25, {
-		ogTemp + (1* deviation)
-	}, {
-		ogTemp + ([1,-1].choose * deviation)
-	}
-);
+	// Values
+	v = IdentityDictionary.new;
 
-// Envelope used for the fading
-var env = Pseg([ogTemp, newTemp], fTime, \exp).asStream;
+	v.put(\tempooff, 2);
+	v.put(\changetempo, 2);
 
-var val = 0;
+	a.put(\startPat, {|el|
+		var val = el.value;
+		if(val == 1, {
+			"Starting pattern".postln;
+			// ~scale = Scale.choose;
+			Pdef(\master, ~makeComposition.value(~root, ~scale, ~pieceDurInBeats)).play;
+		})
+	});
 
-// Do the tempo change
-loop{
-	timeGrain.wait;
+	a.put(\stopPat, {|el|
+		var val = el.value;
+		if(val == 1, {
+			"stopping pattern".postln;
+			Pdef(\master).stop;
+		})
+	});
 
-	val = env.next;
+	a.put(\applyChanges, {|el|
+		var val = el.value;
 
-	if(val.isNil, { 
-		Tdef(\tempoChanger).stop;
-	}, {
-		TempoClock.default.tempo = val;
-	})
-}
-}).reset;
+		if(val == 1, {
+			"Applying changes".postln;
 
-Tdef(\tempoBot, {
-	"Tempobot is alive".postln;
-
-	loop{ 
-		var now = Date.getDate.stamp;
-		if(~tempoChangeProbability.coin, {
-			"%: Tempobot changing tempo!".format(now).postln;
-			Tdef(\tempoChanger).reset.play
-		}, {
-			"%: Tempobot not changing tempo".format(now).postln;
+			v.keysValuesDo{|key, value|
+				"Setting % to %".format(key, value).postln;
+				Pdefn(key).source = value;
+			};
 		});
 
-		~tempoChangeTime.wait;
-	}
-}).reset.play;
+		TempoClock.default.tempo_(v[\changetempo] ?? 1)
+	});
 
+	a.put(\rootNote, {|el|
+		var val = el.value;
+		val = val.linlin(0.0,1.0,-7,7).round.asInteger;
+		"Root note: %".format(val).postln;
+
+		v.put(\root, val)
+	});
+
+	a.put(\noteOffset, {|el|
+		var val = el.value;
+		val = val.linlin(0.0,1.0,-12,12).round.asInteger;
+		"note offset: %".format(val).postln;
+
+		v.put(\note, val)
+	});
+
+	a.put(\chordTightness, {|el|
+		var val = el.value.roundUp(0.01);
+		"chord tightness: %".format(val).postln;
+
+		v.put(\tight, val)
+	});
+
+	a.put(\tempoprob, {|el|
+		var val = el.value;
+		"Changing tempo probability: %".format(val).postln;
+		~tempoChangeProbability	= val;
+	});
+
+	a.put(\tempooff, {|el|
+		var val = el.value;
+		val = val.linexp(0.0,1.0,0.001,4);
+		"Changing tempoclock speed: %".format(val).postln;
+		v.put(\tempooff, val)
+	});
+
+	a.put(\detune, {|el|
+		var val = el.value;
+		val = val.linexp(0.0,1.0,1.0,8.0);
+		"Changing detune scale: %".format(val).postln;
+		v.put(\detune, val)
+	});
+
+	a.put(\changeChords, {|el|
+		var val = el.value;
+		"Changing chords".postln;
+	});
+
+	a.put(\changeSpeed, {|el|
+		var val = el.value;
+		val = val.linexp(0.0,1.0,16.0,0.5).roundUp(0.01);
+		"Changing speed: %".format(val).postln;
+
+		v.put(\speed, val)
+	});
+
+	a.put(\octOff, {|el|
+		var val = el.value;
+		val= val.linlin(0.0,1.0,-6,6).round.asInteger;
+		"Changing octave offset: %".format(val).postln;
+		v.put(\octoff, val)
+	});
+
+	a.put(\changePanSpeed, {|el|
+		var val = el.value.linexp(0.0,1.0,0.1,4.0);
+		"Changing pan speed: %".format(val).postln;
+		v.put(\pan, val)
+	});
+
+	a.put(\stuts, {|el|
+		var val = el.value.linlin(0.0,1.0,0,4.0).round.asInteger;
+		"Changing stutter offset: %".format(val).postln;
+		v.put(\stuts, val)
+	});
+
+	a.put(\amp, {|el|
+		var val = el.value;
+		"Changing amp: %".format(val).postln;
+		Pdefn(\amp).quant_(0.0).source = val;
+		// v.put(\amp, val)
+	});
+
+	a.put(\changetempo, {|el|
+		var val = el.value.linexp(0.0,1.0,0.01,4.0);
+		"Changing tempo: %".format(val).postln;
+		v.put(\changetempo, val)
+	});
+
+	a.put(\filteroff, {|el|
+		var val = el.value.linlin(0.0,1.0,0.0,0.95);
+		"Changing filter offset: %".format(val).postln;
+		v.put(\filteroff, val)
+	});
+
+	a.put(\deg1, {|el|
+		var val = el.value.linlin(0.0,1.0,0.0,10).round;
+		"Changing deg1: %".format(val).postln;
+		v.put(\deg1, val)
+	});
+
+
+	a.put(\deg2, {|el|
+		var val = el.value.linlin(0.0,1.0,0.0,10).round;
+		"Changing deg2: %".format(val).postln;
+		v.put(\deg2, val)
+	});
+
+
+	a.put(\deg3, {|el|
+		var val = el.value.linlin(0.0,1.0,0.0,10).round;
+		"Changing deg3: %".format(val).postln;
+		v.put(\deg3, val)
+	});
+
+	MKtl('nano').elAt(\tr, \play).action = a[\startPat];
+	MKtl('nano').elAt(\tr, \stop).action = a[\stopPat];
+	MKtl('nano').elAt(\tr, \cycle).action = a[\changeChords];
+	MKtl('nano').elAt(\tr, \mset).action = a[\applyChanges];
+
+	MKtl('nano').elAt(\kn, \1).action = a[\changeSpeed];
+	MKtl('nano').elAt(\kn, \2).action = a[\rootNote];
+	MKtl('nano').elAt(\kn, \3).action = a[\stuts];
+	MKtl('nano').elAt(\kn, \7).action = a[\changetempo];
+	MKtl('nano').elAt(\kn, \8).action = a[\amp];
+
+	MKtl('nano').elAt(\sl, \1).action = a[\noteOffset];
+	// MKtl('nano').elAt(\sl, \2).action = a[\octOff];
+	MKtl('nano').elAt(\sl, \2).action = a[\filteroff];
+	MKtl('nano').elAt(\sl, \3).action = a[\chordTightness];
+	MKtl('nano').elAt(\sl, \4).action = a[\changePanSpeed];
+	MKtl('nano').elAt(\sl, \5).action = a[\detune];
+	MKtl('nano').elAt(\sl, \6).action = a[\deg1];
+	MKtl('nano').elAt(\sl, \7).action = a[\deg2];
+	MKtl('nano').elAt(\sl, \8).action = a[\deg3];
 )
+
+s.meter
